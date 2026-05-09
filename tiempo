@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -15,7 +16,7 @@
             align-items: center;
             font-family: sans-serif;
         }
-        
+
         audio {
             width: 300px;
             outline: none;
@@ -29,205 +30,205 @@
         }
     </style>
 </head>
+
 <body>
 
     <div id="status"></div>
-    <audio id="reproductor" controls></audio>
-    
-<script>
-    const synth = window.speechSynthesis;
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    let audioCtx;
-    const player = document.getElementById('reproductor');
-    const statusText = document.getElementById('status');
-    
-    let guionText = "";
-    let loopTimeout;
-    let currentUtterance;
-    let isDataLoaded = false;
-    
-    // Tiempo objetivo en segundos para adaptar la voz (1 minuto exacto)
-    const estimacionSegundos = 60; 
+    <audio id="reproductor" controls autoplay></audio>
 
-    // 1. Cargar voces disponibles
-    let voices = [];
-    function loadVoices() { voices = synth.getVoices(); }
-    loadVoices();
-    if (speechSynthesis.onvoiceschanged !== undefined) {
-        speechSynthesis.onvoiceschanged = loadVoices;
-    }
+    <script>
+        const synth = window.speechSynthesis;
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx;
+        const player = document.getElementById('reproductor');
+        const statusText = document.getElementById('status');
 
-    // 2. Generador dinámico de un archivo WAV en silencio absoluto
-    function createSilentWavUrl(durationSec) {
-        const sampleRate = 8000;
-        const numSamples = Math.floor(durationSec * sampleRate);
-        const buffer = new ArrayBuffer(44 + numSamples * 2);
-        const view = new DataView(buffer);
+        let guionText = "";
+        let loopTimeout;
+        let currentUtterance;
+        let isDataLoaded = false;
 
-        const writeString = (offset, string) => {
-            for (let i = 0; i < string.length; i++) {
-                view.setUint8(offset + i, string.charCodeAt(i));
-            }
-        };
+        // Tiempo objetivo en segundos para adaptar la voz (1 minuto exacto)
+        const estimacionSegundos = 60;
 
-        writeString(0, 'RIFF');
-        view.setUint32(4, 36 + numSamples * 2, true);
-        writeString(8, 'WAVE');
-        writeString(12, 'fmt ');
-        view.setUint32(16, 16, true);
-        view.setUint16(20, 1, true);
-        view.setUint16(22, 1, true);
-        view.setUint32(24, sampleRate, true);
-        view.setUint32(28, sampleRate * 2, true);
-        view.setUint16(32, 2, true);
-        view.setUint16(34, 16, true);
-        writeString(36, 'data');
-        view.setUint32(40, numSamples * 2, true);
-
-        const blob = new Blob([buffer], { type: 'audio/wav' });
-        return URL.createObjectURL(blob);
-    }
-
-    function initAudio() {
-        if (!audioCtx) audioCtx = new AudioContext();
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-    }
-
-    // 3. Indicativo sonoro (Arpegio)
-    function playArpeggio(callback) {
-        initAudio();
-        const notes = [261.63, 329.63, 392.00, 523.25]; 
-        let startTime = audioCtx.currentTime;
-
-        notes.forEach((freq, index) => {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = 'sine';
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            
-            osc.frequency.value = freq;
-            let t = startTime + (index * 0.15);
-            gain.gain.setValueAtTime(0, t);
-            gain.gain.linearRampToValueAtTime(0.15, t + 0.05);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
-            osc.start(t);
-            osc.stop(t + 1.5);
-        });
-        setTimeout(callback, 1200); 
-    }
-
-    // 4. Descargar datos de clima y preparar el boletín
-    async function fetchBulletin() {
-        statusText.innerText = "";
-        try {
-            const res = await fetch('https://wttr.in/Maitino?format=j1&lang=es');
-            const data = await res.json();
-            const current = data.current_condition[0];
-            const today = data.weather[0];
-            const tomorrow = data.weather[1];
-            const day3 = data.weather[2];
-            const ahora = new Date();
-            const hour = ahora.getHours();
-            const mins = ahora.getMinutes().toString().padStart(2, '0');
-            const dateStr = ahora.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
-            let faseDia = (hour >= 20 || hour < 6) ? "la noche" : (hour < 13) ? "la mañana" : "la tarde";
-            let horaIndex = (hour >= 20 || hour < 2) ? 7 : (hour < 7) ? 1 : (hour < 13) ? 3 : 5;
-
-            const condProximasHoras = today.hourly[horaIndex].lang_es[0].value.toLowerCase();
-            const condManana = tomorrow.hourly[4].lang_es[0].value.toLowerCase();
-            const nextDayDate = new Date(ahora.getTime() + 86400000 * 2);
-            const nameDay3 = nextDayDate.toLocaleDateString('es-ES', { weekday: 'long' });
-            const condDay3 = day3.hourly[4].lang_es[0].value.toLowerCase();
-
-            guionText = `
-            SERVICIO METEOROLÓGICO DE RADIO MAITINO.
-            Boletín actualizado para hoy, ${dateStr}. Son las ${hour} horas y ${mins} minutos.
-            En este momento, los cielos se presentan con ${current.lang_es[0].value.toLowerCase()}. Los termómetros registran ${current.temp_C} grados, el viento se sitúa en ${current.windspeedKmph} kilómetros por hora y la sensación térmica es de ${current.FeelsLikeC} grados. Humedad del ${current.humidity} por ciento.
-            De cara a las próximas horas de ${faseDia}, el pronóstico indica condiciones de ${condProximasHoras}. Las temperaturas alcanzarán hoy un máximo de ${today.maxtempC} grados.
-            Para mañana: prevemos un escenario dominado por ${condManana} con temperaturas entre ${tomorrow.mintempC} y ${tomorrow.maxtempC} grados.
-            Próximo ${nameDay3}: cielos con ${condDay3} y temperaturas de ${day3.mintempC} a ${day3.maxtempC} grados.
-            Esta es una información de la Agencia meteorológica de Maitino.`;
-            
-            // Creamos el archivo "falso" de 60 segundos y se lo metemos al reproductor nativo
-            player.src = createSilentWavUrl(estimacionSegundos);
-            
-            statusText.innerText = "";
-            isDataLoaded = true;
-            return true;
-        } catch (e) {
-            statusText.innerText = "";
-            setTimeout(fetchBulletin, 10000);
-            return false;
+        // 1. Cargar voces disponibles
+        let voices = [];
+        function loadVoices() {
+            voices = synth.getVoices();
         }
-    }
-
-    // 5. Iniciar la locución 
-    function startVoice() {
-        if (synth.speaking && synth.paused) {
-            synth.resume();
-            return;
+        loadVoices();
+        if (speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = loadVoices;
         }
-        
-        synth.cancel(); 
-        
-        playArpeggio(() => {
-            if (player.paused) return; 
-            
-            currentUtterance = new SpeechSynthesisUtterance(guionText);
-            const googleVoice = voices.find(v => v.name.includes('Google') && v.lang.includes('es-ES')) || voices.find(v => v.lang.includes('es-ES')) || voices[0];
-            if (googleVoice) currentUtterance.voice = googleVoice;
-            
-            // Adaptación dinámica de velocidad para 60 segundos
-            const duracionBaseLocucion = guionText.length / 14; 
-            let dynamicRate = duracionBaseLocucion / estimacionSegundos;
-            
-            // Rango seguro de entendimiento humano
-            dynamicRate = Math.max(0.85, Math.min(1.25, dynamicRate));
-            
-            currentUtterance.rate = dynamicRate; 
-            currentUtterance.pitch = 1.0;
 
-            currentUtterance.onend = () => {
-                if (!player.paused) playArpeggio(() => {});
+        // 2. Generador dinámico de un archivo WAV en silencio absoluto
+        function createSilentWavUrl(durationSec) {
+            const sampleRate = 8000;
+            const numSamples = Math.floor(durationSec * sampleRate);
+            const buffer = new ArrayBuffer(44 + numSamples * 2);
+            const view = new DataView(buffer);
+
+            const writeString = (offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
             };
-            
-            synth.speak(currentUtterance);
-        });
-    }
 
-    // 6. Controles del reproductor nativo
-    player.addEventListener('play', () => {
-        if (!isDataLoaded) {
-            player.pause();
-            return;
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + numSamples * 2, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(36, 'data');
+            view.setUint32(40, numSamples * 2, true);
+
+            const blob = new Blob([buffer], { type: 'audio/wav' });
+            return URL.createObjectURL(blob);
         }
-        statusText.innerText = "";
-        startVoice();
-    });
 
-    player.addEventListener('pause', () => {
-        statusText.innerText = "";
-        synth.pause();
-    });
+        function initAudio() {
+            if (!audioCtx) audioCtx = new AudioContext();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
 
-    player.addEventListener('ended', () => {
-        statusText.innerText = "";
-        synth.cancel(); 
-        isDataLoaded = false;
-        
-        clearTimeout(loopTimeout);
-        loopTimeout = setTimeout(() => {
-            fetchBulletin().then(success => {
-                if(success) player.play(); 
+        // 3. Indicativo sonoro (Arpegio)
+        function playArpeggio(callback) {
+            initAudio();
+            const notes = [261.63, 329.63, 392.00, 523.25];
+            let startTime = audioCtx.currentTime;
+
+            notes.forEach((freq, index) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                osc.frequency.value = freq;
+                let t = startTime + (index * 0.15);
+                gain.gain.setValueAtTime(0, t);
+                gain.gain.linearRampToValueAtTime(0.15, t + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
+                osc.start(t);
+                osc.stop(t + 1.5);
             });
-        }, 60000);
-    });
+            setTimeout(callback, 1200);
+        }
 
-    // Iniciar carga del boletín al abrir la página
-    window.addEventListener('DOMContentLoaded', fetchBulletin);
+        // 4. Descargar datos de clima y preparar el boletín
+        async function fetchBulletin() {
+            statusText.innerText = "";
+            try {
+                const res = await fetch('https://wttr.in/Maitino?format=j1&lang=es');
+                const data = await res.json();
+                const current = data.current_condition[0];
+                const today = data.weather[0];
+                const tomorrow = data.weather[1];
+                const day3 = data.weather[2];
+                const ahora = new Date();
+                const hour = ahora.getHours();
+                const mins = ahora.getMinutes().toString().padStart(2, '0');
+                const dateStr = ahora.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-</script>
+                let faseDia = (hour >= 20 || hour < 6) ? "la noche" : (hour < 13) ? "la mañana" : "la tarde";
+                let horaIndex = (hour >= 20 || hour < 2) ? 7 : (hour < 7) ? 1 : (hour < 13) ? 3 : 5;
+
+                const condProximasHoras = today.hourly[horaIndex].lang_es[0].value.toLowerCase();
+                const condManana = tomorrow.hourly[4].lang_es[0].value.toLowerCase();
+                const nextDayDate = new Date(ahora.getTime() + 86400000 * 2);
+                const nameDay3 = nextDayDate.toLocaleDateString('es-ES', { weekday: 'long' });
+                const condDay3 = day3.hourly[4].lang_es[0].value.toLowerCase();
+
+                guionText = `
+                SERVICIO METEOROLÓGICO DE RADIO MAITINO.
+                Boletín actualizado para hoy, ${dateStr}. Son las ${hour} horas y ${mins} minutos.
+                En este momento, los cielos se presentan con ${current.lang_es[0].value.toLowerCase()}. Los termómetros registran ${current.temp_C} grados, el viento se sitúa en ${current.windspeedKmph} kilómetros por hora y la sensación térmica es de ${current.FeelsLikeC} grados. Humedad del ${current.humidity} por ciento.
+                De cara a las próximas horas de ${faseDia}, el pronóstico indica condiciones de ${condProximasHoras}. Las temperaturas alcanzarán hoy un máximo de ${today.maxtempC} grados.
+                Para mañana: prevemos un escenario dominado por ${condManana} con temperaturas entre ${tomorrow.mintempC} y ${tomorrow.maxtempC} grados.
+                Próximo ${nameDay3}: cielos con ${condDay3} y temperaturas de ${day3.mintempC} a ${day3.maxtempC} grados.
+                Es una información de la Agencia Meteorológica de Maitino.`;
+
+                player.src = createSilentWavUrl(estimacionSegundos);
+                statusText.innerText = "";
+                isDataLoaded = true;
+                return true;
+            } catch (e) {
+                statusText.innerText = "";
+                setTimeout(fetchBulletin, 10000);
+                return false;
+            }
+        }
+
+        // 5. Iniciar la locución respetando el tiempo del reproductor (Sincronización)
+        function startVoice() {
+            synth.cancel();
+
+            const speakAction = () => {
+                if (player.paused) return;
+
+                // CÁLCULO PARA RESPETAR EL SEGUNDO SELECCIONADO (Ej: segundo 20)
+                const progreso = player.currentTime / estimacionSegundos;
+                const inicioChar = Math.floor(guionText.length * progreso);
+                const textoRestante = guionText.substring(inicioChar);
+
+                currentUtterance = new SpeechSynthesisUtterance(textoRestante);
+                const googleVoice = voices.find(v => v.name.includes('Google') && v.lang.includes('es-ES')) || voices.find(v => v.lang.includes('es-ES')) || voices[0];
+                if (googleVoice) currentUtterance.voice = googleVoice;
+
+                // Adaptación de velocidad al tiempo que queda en el reproductor
+                const tiempoRestante = Math.max(1, estimacionSegundos - player.currentTime);
+                const duracionBase = textoRestante.length / 14;
+                let dynamicRate = duracionBase / tiempoRestante;
+                dynamicRate = Math.max(0.85, Math.min(1.25, dynamicRate));
+
+                currentUtterance.rate = dynamicRate;
+                currentUtterance.pitch = 1.0;
+                currentUtterance.onend = () => {
+                    if (!player.paused && player.currentTime >= (estimacionSegundos - 2)) playArpeggio(() => { });
+                };
+                synth.speak(currentUtterance);
+            };
+
+            // Si es el inicio, suena arpegio. Si es un salto (seek), habla directo.
+            if (player.currentTime < 2) {
+                playArpeggio(speakAction);
+            } else {
+                speakAction();
+            }
+        }
+
+        // 6. Controles del reproductor nativo
+        player.addEventListener('play', () => {
+            if (isDataLoaded) startVoice();
+        });
+
+        // NUEVO: Detecta cuando mueves la barra al segundo 20 para sincronizar la voz
+        player.addEventListener('seeked', () => {
+            if (isDataLoaded) startVoice();
+        });
+
+        player.addEventListener('pause', () => {
+            synth.pause();
+        });
+
+        player.addEventListener('ended', () => {
+            statusText.innerText = "";
+            synth.cancel();
+            isDataLoaded = false;
+        });
+
+        window.addEventListener('DOMContentLoaded', () => {
+            fetchBulletin().then(success => {
+                if (success) player.play();
+            });
+        });
+    </script>
 </body>
+
 </html>
