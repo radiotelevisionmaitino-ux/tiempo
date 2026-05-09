@@ -154,9 +154,7 @@
                 Próximo ${nameDay3}: cielos con ${condDay3} y temperaturas de ${day3.mintempC} a ${day3.maxtempC} grados.
                 Es una información de la Agencia Meteorológica de Maitino.`;
 
-                // Creamos el archivo "falso" de 60 segundos y se lo metemos al reproductor nativo
                 player.src = createSilentWavUrl(estimacionSegundos);
-
                 statusText.innerText = "";
                 isDataLoaded = true;
                 return true;
@@ -167,51 +165,55 @@
             }
         }
 
-        // 5. Iniciar la locución 
+        // 5. Iniciar la locución respetando el tiempo del reproductor (Sincronización)
         function startVoice() {
-            if (synth.speaking && synth.paused) {
-                synth.resume();
-                return;
-            }
             synth.cancel();
 
-            playArpeggio(() => {
+            const speakAction = () => {
                 if (player.paused) return;
 
-                currentUtterance = new SpeechSynthesisUtterance(guionText);
+                // CÁLCULO PARA RESPETAR EL SEGUNDO SELECCIONADO (Ej: segundo 20)
+                const progreso = player.currentTime / estimacionSegundos;
+                const inicioChar = Math.floor(guionText.length * progreso);
+                const textoRestante = guionText.substring(inicioChar);
+
+                currentUtterance = new SpeechSynthesisUtterance(textoRestante);
                 const googleVoice = voices.find(v => v.name.includes('Google') && v.lang.includes('es-ES')) || voices.find(v => v.lang.includes('es-ES')) || voices[0];
                 if (googleVoice) currentUtterance.voice = googleVoice;
 
-                // Adaptación dinámica de velocidad para 60 segundos
-                const duracionBaseLocucion = guionText.length / 14;
-                let dynamicRate = duracionBaseLocucion / estimacionSegundos;
-
-                // Rango seguro de entendimiento humano
+                // Adaptación de velocidad al tiempo que queda en el reproductor
+                const tiempoRestante = Math.max(1, estimacionSegundos - player.currentTime);
+                const duracionBase = textoRestante.length / 14;
+                let dynamicRate = duracionBase / tiempoRestante;
                 dynamicRate = Math.max(0.85, Math.min(1.25, dynamicRate));
 
                 currentUtterance.rate = dynamicRate;
                 currentUtterance.pitch = 1.0;
-
                 currentUtterance.onend = () => {
-                    if (!player.paused) playArpeggio(() => { });
+                    if (!player.paused && player.currentTime >= (estimacionSegundos - 2)) playArpeggio(() => { });
                 };
-
                 synth.speak(currentUtterance);
-            });
+            };
+
+            // Si es el inicio, suena arpegio. Si es un salto (seek), habla directo.
+            if (player.currentTime < 2) {
+                playArpeggio(speakAction);
+            } else {
+                speakAction();
+            }
         }
 
         // 6. Controles del reproductor nativo
         player.addEventListener('play', () => {
-            if (!isDataLoaded) {
-                player.pause();
-                return;
-            }
-            statusText.innerText = "";
-            startVoice();
+            if (isDataLoaded) startVoice();
+        });
+
+        // NUEVO: Detecta cuando mueves la barra al segundo 20 para sincronizar la voz
+        player.addEventListener('seeked', () => {
+            if (isDataLoaded) startVoice();
         });
 
         player.addEventListener('pause', () => {
-            statusText.innerText = "";
             synth.pause();
         });
 
@@ -219,16 +221,8 @@
             statusText.innerText = "";
             synth.cancel();
             isDataLoaded = false;
-
-            clearTimeout(loopTimeout);
-            loopTimeout = setTimeout(() => {
-                fetchBulletin().then(success => {
-                    if (success) player.play();
-                });
-            }, 60000);
         });
 
-        // Iniciar carga del boletín y reproducir automáticamente al cargar
         window.addEventListener('DOMContentLoaded', () => {
             fetchBulletin().then(success => {
                 if (success) player.play();
