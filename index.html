@@ -1,5 +1,4 @@
-<!DOCTYPE html>
-<html lang="es">
+<!DOCTYPE html><html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -30,21 +29,23 @@
 <body>
     <div id="status"></div>
     <audio id="reproductor" controls autoplay></audio>
-
     <script>
         const synth = window.speechSynthesis;
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         let audioCtx;
-        let streamDestination; // Nodo para empaquetar el audio para la radio
         const player = document.getElementById('reproductor');
         const statusText = document.getElementById('status');
 
         let guionText = "";
+        let loopTimeout;
         let currentUtterance;
         let isDataLoaded = false;
-        const estimacionSegundos = 60;
-        let voices = [];
 
+        // Tiempo objetivo en segundos para adaptar la voz (1 minuto exacto)
+        const estimacionSegundos = 60;
+
+        // 1. Cargar voces disponibles
+        let voices = [];
         function loadVoices() {
             voices = synth.getVoices();
         }
@@ -53,6 +54,7 @@
             speechSynthesis.onvoiceschanged = loadVoices;
         }
 
+        // 2. Generador dinámico de un archivo WAV en silencio absoluto
         function createSilentWavUrl(durationSec) {
             const sampleRate = 8000;
             const numSamples = Math.floor(durationSec * sampleRate);
@@ -84,14 +86,11 @@
         }
 
         function initAudio() {
-            if (!audioCtx) {
-                audioCtx = new AudioContext();
-                // Creamos el túnel de salida de audio compatible con transmisiones
-                streamDestination = audioCtx.createMediaStreamDestination();
-            }
+            if (!audioCtx) audioCtx = new AudioContext();
             if (audioCtx.state === 'suspended') audioCtx.resume();
         }
 
+        // 3. Indicativo sonoro (Arpegio)
         function playArpeggio(callback) {
             initAudio();
             const notes = [261.63, 329.63, 392.00, 523.25];
@@ -101,11 +100,8 @@
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
                 osc.type = 'sine';
-                
-                // Conectamos el oscilador tanto a tus altavoces locales como al túnel de la radio
                 osc.connect(gain);
                 gain.connect(audioCtx.destination);
-                gain.connect(streamDestination);
 
                 osc.frequency.value = freq;
                 let t = startTime + (index * 0.15);
@@ -118,15 +114,18 @@
             setTimeout(callback, 1200);
         }
 
+        // 4. Descargar datos de clima y preparar el boletín
         async function fetchBulletin() {
             statusText.innerText = "";
             try {
                 const res = await fetch('https://wttr.in/Maitino?format=j1&lang=es');
                 const data = await res.json();
+                
                 const current = data.current_condition[0];
                 const today = data.weather[0];
                 const tomorrow = data.weather[1];
                 const day3 = data.weather[2];
+                
                 const ahora = new Date();
                 const hour = ahora.getHours();
                 const mins = ahora.getMinutes().toString().padStart(2, '0');
@@ -135,20 +134,21 @@
                 let faseDia = (hour >= 20 || hour < 6) ? "la noche" : (hour < 13) ? "la mañana" : "la tarde";
                 let horaIndex = (hour >= 20 || hour < 2) ? 7 : (hour < 7) ? 1 : (hour < 13) ? 3 : 5;
 
+                // Variables climáticas adicionales para el nuevo guion
                 const condProximasHoras = today.hourly[horaIndex].lang_es[0].value.toLowerCase();
+                const probLluviaHoras = today.hourly[horaIndex].chanceofrain;
+                const precipHoy = current.precipMM;
+
                 const condManana = tomorrow.hourly[4].lang_es[0].value.toLowerCase();
+                const probLluviaManana = tomorrow.hourly[4].chanceofrain;
+
                 const nextDayDate = new Date(ahora.getTime() + 86400000 * 2);
                 const nameDay3 = nextDayDate.toLocaleDateString('es-ES', { weekday: 'long' });
                 const condDay3 = day3.hourly[4].lang_es[0].value.toLowerCase();
+                const probLluviaDay3 = day3.hourly[4].chanceofrain;
 
-                guionText = `
-                SERVICIO METEOROLÓGICO DE RADIO MAITINO.
-                Boletín actualizado para hoy, ${dateStr}. Son las ${hour} horas y ${mins} minutos.
-                En este momento, los cielos se presentan ${current.lang_es[0].value.toLowerCase()}s. Los termómetros registran ${current.temp_C} grados, el viento se sitúa en ${current.windspeedKmph} kilómetros por hora y la sensación térmica es de ${current.FeelsLikeC} grados. Humedad del ${current.humidity} por ciento.
-                De cara a las próximas horas de ${faseDia}, el pronóstico indica condiciones de ${condProximasHoras}. Las temperaturas alcanzarán hoy un máximo de ${today.maxtempC} grados.
-                Para mañana: prevemos un escenario dominado por ${condManana} con temperaturas entre ${tomorrow.mintempC} y ${tomorrow.maxtempC} grados.
-                Próximo ${nameDay3}: cielos ${condDay3}s y temperaturas de ${day3.mintempC} a ${day3.maxtempC} grados.
-                Es una información de la Agencia Meteorológica de Maitino.`;
+                // Integración del nuevo texto adaptado perfectamente
+                guionText = `                  SERVICIO METEOROLÓGICO DE RADIO MAITINO. Boletín actualizado para hoy, ${dateStr}. Son las ${hour} horas y ${mins} minutos. En este momento, los cielos se presentan ${current.lang_es[0].value.toLowerCase()}s. Los termómetros registran ${current.temp_C} grados, el viento se sitúa en ${current.windspeedKmph} kilómetros por hora y la sensación térmica es de ${current.FeelsLikeC} grados. Humedad del ${current.humidity} por ciento y precipitación acumulada de ${precipHoy} milímetros. De cara a las próximas horas de ${faseDia}, el pronóstico indica condiciones de ${condProximasHoras} con una probabilidad de lluvia del ${probLluviaHoras} por ciento. Las temperaturas alcanzarán hoy un máximo de ${today.maxtempC} grados. Para mañana: prevemos un escenario dominado por ${condManana} con temperaturas entre ${tomorrow.mintempC} y ${tomorrow.maxtempC} grados, y una probabilidad de precipitación del ${probLluviaManana} por ciento. Próximo ${nameDay3}: cielos ${condDay3}s, temperaturas de ${day3.mintempC} a ${day3.maxtempC} grados, y un ${probLluviaDay3} por ciento de probabilidad de lluvia. Es una información de la Agencia Meteorológica de Maitino.`;
 
                 player.src = createSilentWavUrl(estimacionSegundos);
                 statusText.innerText = "";
@@ -161,13 +161,14 @@
             }
         }
 
+        // 5. Iniciar la locución respetando el tiempo del reproductor (Sincronización)
         function startVoice() {
             synth.cancel();
-            initAudio();
 
             const speakAction = () => {
                 if (player.paused) return;
 
+                // CÁLCULO PARA RESPETAR EL SEGUNDO SELECCIONADO (Ej: segundo 20)
                 const progreso = player.currentTime / estimacionSegundos;
                 const inicioChar = Math.floor(guionText.length * progreso);
                 const textoRestante = guionText.substring(inicioChar);
@@ -176,6 +177,7 @@
                 const googleVoice = voices.find(v => v.name.includes('Google') && v.lang.includes('es-ES')) || voices.find(v => v.lang.includes('es-ES')) || voices[0];
                 if (googleVoice) currentUtterance.voice = googleVoice;
 
+                // Adaptación de velocidad al tiempo que queda en el reproductor
                 const tiempoRestante = Math.max(1, estimacionSegundos - player.currentTime);
                 const duracionBase = textoRestante.length / 14;
                 let dynamicRate = duracionBase / tiempoRestante;
@@ -183,14 +185,13 @@
 
                 currentUtterance.rate = dynamicRate;
                 currentUtterance.pitch = 1.0;
-                
                 currentUtterance.onend = () => {
                     if (!player.paused && player.currentTime >= (estimacionSegundos - 2)) playArpeggio(() => { });
                 };
-
                 synth.speak(currentUtterance);
             };
 
+            // Si es el inicio, suena arpegio. Si es un salto (seek), habla directo.
             if (player.currentTime < 2) {
                 playArpeggio(speakAction);
             } else {
@@ -198,10 +199,12 @@
             }
         }
 
+        // 6. Controles del reproductor nativo
         player.addEventListener('play', () => {
             if (isDataLoaded) startVoice();
         });
 
+        // Detecta cuando mueves la barra al segundo 20 para sincronizar la voz
         player.addEventListener('seeked', () => {
             if (isDataLoaded) startVoice();
         });
