@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="es">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,12 +15,10 @@
             align-items: center;
             font-family: sans-serif;
         }
-
         audio {
             width: 300px;
             outline: none;
         }
-
         #status {
             color: #888;
             font-size: 13px;
@@ -30,9 +27,7 @@
         }
     </style>
 </head>
-
 <body>
-
     <div id="status"></div>
     <audio id="reproductor" controls autoplay></audio>
 
@@ -40,19 +35,16 @@
         const synth = window.speechSynthesis;
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         let audioCtx;
+        let streamDestination; // Nodo para empaquetar el audio para la radio
         const player = document.getElementById('reproductor');
         const statusText = document.getElementById('status');
 
         let guionText = "";
-        let loopTimeout;
         let currentUtterance;
         let isDataLoaded = false;
-
-        // Tiempo objetivo en segundos para adaptar la voz (1 minuto exacto)
         const estimacionSegundos = 60;
-
-        // 1. Cargar voces disponibles
         let voices = [];
+
         function loadVoices() {
             voices = synth.getVoices();
         }
@@ -61,7 +53,6 @@
             speechSynthesis.onvoiceschanged = loadVoices;
         }
 
-        // 2. Generador dinámico de un archivo WAV en silencio absoluto
         function createSilentWavUrl(durationSec) {
             const sampleRate = 8000;
             const numSamples = Math.floor(durationSec * sampleRate);
@@ -93,11 +84,14 @@
         }
 
         function initAudio() {
-            if (!audioCtx) audioCtx = new AudioContext();
+            if (!audioCtx) {
+                audioCtx = new AudioContext();
+                // Creamos el túnel de salida de audio compatible con transmisiones
+                streamDestination = audioCtx.createMediaStreamDestination();
+            }
             if (audioCtx.state === 'suspended') audioCtx.resume();
         }
 
-        // 3. Indicativo sonoro (Arpegio)
         function playArpeggio(callback) {
             initAudio();
             const notes = [261.63, 329.63, 392.00, 523.25];
@@ -107,8 +101,11 @@
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
                 osc.type = 'sine';
+                
+                // Conectamos el oscilador tanto a tus altavoces locales como al túnel de la radio
                 osc.connect(gain);
                 gain.connect(audioCtx.destination);
+                gain.connect(streamDestination);
 
                 osc.frequency.value = freq;
                 let t = startTime + (index * 0.15);
@@ -121,7 +118,6 @@
             setTimeout(callback, 1200);
         }
 
-        // 4. Descargar datos de clima y preparar el boletín
         async function fetchBulletin() {
             statusText.innerText = "";
             try {
@@ -165,14 +161,13 @@
             }
         }
 
-        // 5. Iniciar la locución respetando el tiempo del reproductor (Sincronización)
         function startVoice() {
             synth.cancel();
+            initAudio();
 
             const speakAction = () => {
                 if (player.paused) return;
 
-                // CÁLCULO PARA RESPETAR EL SEGUNDO SELECCIONADO (Ej: segundo 20)
                 const progreso = player.currentTime / estimacionSegundos;
                 const inicioChar = Math.floor(guionText.length * progreso);
                 const textoRestante = guionText.substring(inicioChar);
@@ -181,7 +176,6 @@
                 const googleVoice = voices.find(v => v.name.includes('Google') && v.lang.includes('es-ES')) || voices.find(v => v.lang.includes('es-ES')) || voices[0];
                 if (googleVoice) currentUtterance.voice = googleVoice;
 
-                // Adaptación de velocidad al tiempo que queda en el reproductor
                 const tiempoRestante = Math.max(1, estimacionSegundos - player.currentTime);
                 const duracionBase = textoRestante.length / 14;
                 let dynamicRate = duracionBase / tiempoRestante;
@@ -189,13 +183,14 @@
 
                 currentUtterance.rate = dynamicRate;
                 currentUtterance.pitch = 1.0;
+                
                 currentUtterance.onend = () => {
                     if (!player.paused && player.currentTime >= (estimacionSegundos - 2)) playArpeggio(() => { });
                 };
+
                 synth.speak(currentUtterance);
             };
 
-            // Si es el inicio, suena arpegio. Si es un salto (seek), habla directo.
             if (player.currentTime < 2) {
                 playArpeggio(speakAction);
             } else {
@@ -203,12 +198,10 @@
             }
         }
 
-        // 6. Controles del reproductor nativo
         player.addEventListener('play', () => {
             if (isDataLoaded) startVoice();
         });
 
-        // NUEVO: Detecta cuando mueves la barra al segundo 20 para sincronizar la voz
         player.addEventListener('seeked', () => {
             if (isDataLoaded) startVoice();
         });
@@ -230,5 +223,4 @@
         });
     </script>
 </body>
-
 </html>
