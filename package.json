@@ -1,0 +1,23 @@
+{
+  "name": "radio-maitino-mp3",
+  "version": "1.0.0",
+  "description": "Generador automático de boletín meteorológico en MP3 puro de 60 segundos exactos para Radio Maitino",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "fluent-ffmpeg": "^2.1.3",
+    "gtts": "^0.2.1"
+  },
+  "keywords": [
+    "radio",
+    "mp3",
+    "elche",
+    "weather",
+    "tts"
+  ],
+  "author": "Radio Maitino",
+  "license": "MIT"
+}
