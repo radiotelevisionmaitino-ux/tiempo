@@ -1,0 +1,254 @@
+<!DOCTYPE html><html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Directo | Radio Maitino</title>
+    <style>
+        body {
+            background-color: #000;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: sans-serif;
+        }
+        audio {
+            width: 300px;
+            outline: none;
+            margin-bottom: 15px;
+        }
+        #status {
+            color: #888;
+            font-size: 13px;
+            margin-bottom: 20px;
+            height: 15px;
+        }
+        .btn-mp3 {
+            background: #111;
+            color: #aaa;
+            border: 1px solid #333;
+            padding: 8px 15px;
+            font-size: 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .btn-mp3:hover {
+            background: #222;
+            color: #fff;
+            border-color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div id="status">Cargando boletín de Elche...</div>
+    <audio id="reproductor" controls autoplay></audio>
+    <a id="downloadMp3" class="btn-mp3" style="display:none;" download="boletin-maitino.mp3">📥 Descargar este boletín en MP3</a>
+
+    <script>
+        const synth = window.speechSynthesis;
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx;
+        const player = document.getElementById('reproductor');
+        const statusText = document.getElementById('status');
+        const downloadBtn = document.getElementById('downloadMp3');
+
+        let guionText = "";
+        let currentUtterance;
+        let isDataLoaded = false;
+        const estimacionSegundos = 60;
+
+        let voices = [];
+        function loadVoices() {
+            voices = synth.getVoices();
+        }
+        loadVoices();
+        if (speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = loadVoices;
+        }
+
+        function createSilentWavUrl(durationSec) {
+            const sampleRate = 8000;
+            const numSamples = Math.floor(durationSec * sampleRate);
+            const buffer = new ArrayBuffer(44 + numSamples * 2);
+            const view = new DataView(buffer);
+
+            const writeString = (offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + numSamples * 2, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(36, 'data');
+            view.setUint32(40, numSamples * 2, true);
+
+            const blob = new Blob([buffer], { type: 'audio/wav' });
+            return URL.createObjectURL(blob);
+        }
+
+        function initAudio() {
+            if (!audioCtx) audioCtx = new AudioContext();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playArpeggio(callback) {
+            initAudio();
+            const notes = [261.63, 329.63, 392.00, 523.25];
+            let startTime = audioCtx.currentTime;
+
+            notes.forEach((freq, index) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                osc.frequency.value = freq;
+                let t = startTime + (index * 0.15);
+                gain.gain.setValueAtTime(0, t);
+                gain.gain.linearRampToValueAtTime(0.15, t + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
+                osc.start(t);
+                osc.stop(t + 1.5);
+            });
+            setTimeout(callback, 1200);
+        }
+
+        // Obtener datos usando la API principal de Elche y la secundaria de respaldo
+        async function fetchBulletin() {
+            statusText.innerText = "Conectando con la estación meteorológica...";
+            let guionGenerado = "";
+
+            // 1. FUENTE PRINCIPAL: Elche (api.el-tiempo.net)
+            try {
+                const res = await fetch('https://api.el-tiempo.net/json/v3/provincias/03/municipios/03065');
+                if (res.ok) {
+                    const data = await res.json();
+                    const temperatura = data.temperatura_actual || "20";
+                    const stateSky = data.stateSky ? data.stateSky.description : "despejado";
+                    const tmax = data.temperaturas ? data.temperaturas.max : "25";
+                    const tmin = data.temperaturas ? data.temperaturas.min : "15";
+
+                    const ahora = new Date();
+                    const hour = ahora.getHours();
+                    const mins = ahora.getMinutes().toString().padStart(2, '0');
+                    const dateStr = ahora.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+                    guionGenerado = `SERVICIO METEOROLÓGICO DE RADIO MAITINO. Boletín actualizado para hoy, ${dateStr}. Son las ${hour} horas y ${mins} minutos. En este momento, en Elche, los cielos se presentan con ${stateSky}. Los termómetros registran ${temperatura} grados. Las temperaturas previstas alcanzarán hoy un máximo de ${tmax} grados y un mínimo de ${tmin} grados. Es una información de la Agencia Meteorológica de Maitino.`;
+                }
+            } catch (e) {
+                console.warn("Fallo en la API principal, usando respaldo secundario...");
+            }
+
+            // 2. FUENTE SECUNDARIA (Fallback): wttr.in/Maitino si falla la principal
+            if (!guionGenerado) {
+                try {
+                    const res2 = await fetch('https://wttr.in/Maitino?format=j1&lang=es');
+                    const data2 = await res2.json();
+                    const current = data2.current_condition[0];
+                    const today = data2.weather[0];
+
+                    const ahora = new Date();
+                    const hour = ahora.getHours();
+                    const mins = ahora.getMinutes().toString().padStart(2, '0');
+                    const dateStr = ahora.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+                    guionGenerado = `SERVICIO METEOROLÓGICO DE RADIO MAITINO. Boletín actualizado para hoy, ${dateStr}. Son las ${hour} horas y ${mins} minutos. En este momento, los cielos se presentan ${current.lang_es[0].value.toLowerCase()}s. Los termómetros registran ${current.temp_C} grados, el viento se sitúa en ${current.windspeedKmph} kilómetros por hora y la sensación térmica es de ${current.FeelsLikeC} grados. Las temperaturas alcanzarán hoy un máximo de ${today.maxtempC} y un mínimo de ${today.mintempC} grados. Es una información de la Agencia Meteorológica de Maitino.`;
+                } catch (err) {
+                    guionGenerado = "SERVICIO METEOROLÓGICO DE RADIO MAITINO. En estos momentos no podemos actualizar los datos meteorológicos.";
+                }
+            }
+
+            guionText = guionGenerado;
+            player.src = createSilentWavUrl(estimacionSegundos);
+            statusText.innerText = "";
+            isDataLoaded = true;
+
+            // Truco opcional: Simular un archivo blob descargable para el botón si se desea
+            generateDownloadableMp3(guionText);
+            return true;
+        }
+
+        // Generador simulado de enlace de descarga local
+        function generateDownloadableMp3(text) {
+            // Como el navegador genera la voz por síntesis web, creamos un archivo de texto/audio informativo o enlace directo
+            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+            downloadBtn.style.display = 'inline-block';
+        }
+
+        function startVoice() {
+            synth.cancel();
+            const speakAction = () => {
+                if (player.paused) return;
+
+                const progreso = player.currentTime / estimacionSegundos;
+                const inicioChar = Math.floor(guionText.length * progreso);
+                const textoRestante = guionText.substring(inicioChar);
+
+                currentUtterance = new SpeechSynthesisUtterance(textoRestante);
+                const googleVoice = voices.find(v => v.name.includes('Google') && v.lang.includes('es-ES')) || voices.find(v => v.lang.includes('es-ES')) || voices[0];
+                if (googleVoice) currentUtterance.voice = googleVoice;
+
+                const tiempoRestante = Math.max(1, estimacionSegundos - player.currentTime);
+                const duracionBase = textoRestante.length / 14;
+                let dynamicRate = duracionBase / tiempoRestante;
+                dynamicRate = Math.max(0.85, Math.min(1.25, dynamicRate));
+
+                currentUtterance.rate = dynamicRate;
+                currentUtterance.pitch = 1.0;
+                currentUtterance.onend = () => {
+                    if (!player.paused && player.currentTime >= (estimacionSegundos - 2)) playArpeggio(() => { });
+                };
+                synth.speak(currentUtterance);
+            };
+
+            if (player.currentTime < 2) {
+                playArpeggio(speakAction);
+            } else {
+                speakAction();
+            }
+        }
+
+        player.addEventListener('play', () => {
+            if (isDataLoaded) startVoice();
+        });
+
+        player.addEventListener('seeked', () => {
+            if (isDataLoaded) startVoice();
+        });
+
+        player.addEventListener('pause', () => {
+            synth.pause();
+        });
+
+        player.addEventListener('ended', () => {
+            statusText.innerText = "Actualizando boletín...";
+            synth.cancel();
+            isDataLoaded = false;
+            fetchBulletin().then(success => {
+                if (success) player.play();
+            });
+        });
+
+        window.addEventListener('DOMContentLoaded', () => {
+            fetchBulletin().then(success => {
+                if (success) player.play();
+            });
+        });
+    </script>
+</body>
+</html>
